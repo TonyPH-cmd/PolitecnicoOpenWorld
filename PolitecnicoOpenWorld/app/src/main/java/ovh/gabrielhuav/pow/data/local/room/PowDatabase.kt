@@ -6,16 +6,18 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import ovh.gabrielhuav.pow.data.local.room.dao.LandmarkDao
 import ovh.gabrielhuav.pow.data.local.room.dao.MapTileDao
 import ovh.gabrielhuav.pow.data.local.room.dao.RoadNetworkDao
-import ovh.gabrielhuav.pow.data.local.room.dao.LandmarkDao
+import ovh.gabrielhuav.pow.data.local.room.dao.WaypointDao
+import ovh.gabrielhuav.pow.data.local.room.entity.LandmarkEntity
 import ovh.gabrielhuav.pow.data.local.room.entity.MapTileEntity
 import ovh.gabrielhuav.pow.data.local.room.entity.RoadNodeEntity
 import ovh.gabrielhuav.pow.data.local.room.entity.RoadWayEntity
 import ovh.gabrielhuav.pow.data.local.room.entity.RoadZoneEntity
-import ovh.gabrielhuav.pow.data.local.room.entity.LandmarkEntity
 import ovh.gabrielhuav.pow.data.local.room.dao.CollectibleDao
 import ovh.gabrielhuav.pow.data.local.room.entity.CollectibleEntity
+import ovh.gabrielhuav.pow.data.local.room.entity.WaypointEntity
 import java.io.File
 
 @Database(
@@ -25,9 +27,10 @@ import java.io.File
         RoadNodeEntity::class,
         MapTileEntity::class,
         LandmarkEntity::class,
-        CollectibleEntity::class
+        CollectibleEntity::class,
+        WaypointEntity::class
     ],
-    version = 8,
+    version = 9,  // ← v8: coleccionables | v9: waypoints
     exportSchema = false
 )
 abstract class PowDatabase : RoomDatabase() {
@@ -35,6 +38,7 @@ abstract class PowDatabase : RoomDatabase() {
     abstract fun roadNetworkDao(): RoadNetworkDao
     abstract fun mapTileDao(): MapTileDao
     abstract fun landmarkDao(): LandmarkDao
+    abstract fun waypointDao(): WaypointDao
 
     abstract fun collectibleDao(): CollectibleDao
 
@@ -45,6 +49,20 @@ abstract class PowDatabase : RoomDatabase() {
         fun getInstance(context: Context): PowDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: buildDatabase(context).also { INSTANCE = it }
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `waypoints` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `latitude` REAL NOT NULL,
+                        `longitude` REAL NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )"""
+                )
             }
         }
 
@@ -72,7 +90,7 @@ abstract class PowDatabase : RoomDatabase() {
                 PowDatabase::class.java,
                 dbFile.absolutePath
             )
-                .addMigrations(MIGRATION_7_8)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration()
                 .build()
         }

@@ -35,9 +35,11 @@ import ovh.gabrielhuav.pow.domain.models.ai.NpcAiManager
 import ovh.gabrielhuav.pow.features.map_exterior.ui.components.PlayerAction
 import ovh.gabrielhuav.pow.features.settings.models.ControlType
 import ovh.gabrielhuav.pow.data.local.room.entity.LandmarkEntity
+import ovh.gabrielhuav.pow.data.local.room.entity.WaypointEntity
 import ovh.gabrielhuav.pow.domain.models.Landmark
 import ovh.gabrielhuav.pow.domain.models.LandmarkCatalogManager
 import ovh.gabrielhuav.pow.domain.models.LandmarkAssetTemplate
+import ovh.gabrielhuav.pow.domain.models.Waypoint
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -1307,6 +1309,79 @@ class WorldMapViewModel(
         }
     }
 
+    // ─── WAYPOINTS ───────────────────────────────────────────────────────────────
+
+    fun loadWaypoints(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dao = PowDatabase.getInstance(context).waypointDao()
+                val entities = dao.getAllWaypoints()
+                val waypoints = entities.map { entity ->
+                    ovh.gabrielhuav.pow.domain.models.Waypoint(
+                        id = entity.id,
+                        name = entity.name,
+                        location = org.osmdroid.util.GeoPoint(entity.latitude, entity.longitude),
+                        createdAt = entity.createdAt
+                    )
+                }
+                _uiState.update { it.copy(waypoints = waypoints) }
+            } catch (e: Exception) {
+                Log.e("WorldMapViewModel", "Error al cargar waypoints", e)
+            }
+        }
+    }
+
+    fun addWaypoint(context: Context, name: String) {
+        val loc = _uiState.value.currentLocation ?: return
+        _uiState.update { it.copy(showAddWaypointDialog = false) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dao = PowDatabase.getInstance(context).waypointDao()
+                dao.insertWaypoint(
+                    WaypointEntity(
+                        name = name.trim(),
+                        latitude = loc.latitude,
+                        longitude = loc.longitude
+                    )
+                )
+                loadWaypoints(context)
+            } catch (e: Exception) {
+                Log.e("WorldMapViewModel", "Error al guardar waypoint", e)
+            }
+        }
+    }
+
+    fun deleteWaypoint(context: Context, id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dao = PowDatabase.getInstance(context).waypointDao()
+                dao.deleteWaypointById(id)
+                _uiState.update { state ->
+                    state.copy(
+                        selectedWaypointId = if (state.selectedWaypointId == id) null else state.selectedWaypointId
+                    )
+                }
+                loadWaypoints(context)
+            } catch (e: Exception) {
+                Log.e("WorldMapViewModel", "Error al eliminar waypoint", e)
+            }
+        }
+    }
+
+    fun selectWaypoint(id: Long?) {
+        _uiState.update { it.copy(selectedWaypointId = id) }
+    }
+
+    fun toggleWaypointList(show: Boolean) {
+        _uiState.update { it.copy(showWaypointList = show, selectedWaypointId = null) }
+    }
+
+    fun toggleAddWaypointDialog(show: Boolean) {
+        _uiState.update { it.copy(showAddWaypointDialog = show) }
+    }
+
+    // ─── SISTEMA DE SALUD Y COMBATE ──────────────────────────────────────────────
+
     fun dismissClaimedPopup() { _uiState.update { it.copy(showClaimedPopupFor = null) } }
 
     fun takeDamage(amount: Float) {
@@ -1361,6 +1436,8 @@ class WorldMapViewModel(
         val now = System.currentTimeMillis()
         if (now - lastAttackTime < ATTACK_COOLDOWN_MS) return
         lastAttackTime = now
+
+        // 🌟 Envolvemos en una corrutina para sincronizar con la animación visual
         viewModelScope.launch(Dispatchers.Default) {
             delay(300L)
             val playerLoc = _uiState.value.currentLocation ?: return@launch
